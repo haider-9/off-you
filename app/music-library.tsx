@@ -100,10 +100,71 @@ export default function MusicLibrary() {
     return () => window.clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      const audio = audioRef.current;
+      if (!audio || !activeTrack || !isPlaying) return;
+      if (document.visibilityState === "hidden") {
+        void audio.play().catch(() => undefined);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [activeTrack, isPlaying]);
+
   useEffect(() => () => {
     if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
     void audioGraph.current?.context.close();
   }, []);
+
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+
+    const mediaSession = navigator.mediaSession;
+    if (!activeTrack) {
+      mediaSession.playbackState = "none";
+      mediaSession.metadata = null;
+      return;
+    }
+
+    mediaSession.metadata = new MediaMetadata({
+      title: activeTrack.title,
+      artist: activeTrack.creator,
+      album: activeTrack.offline ? "Offline library" : "Archive.org",
+    });
+    mediaSession.playbackState = isPlaying ? "playing" : "paused";
+
+    const handlePlay = () => { void togglePlayback(); };
+    const handlePause = () => {
+      const audio = audioRef.current;
+      if (!audio || audio.paused) return;
+      audio.pause();
+      setIsPlaying(false);
+    };
+
+    mediaSession.setActionHandler("play", handlePlay);
+    mediaSession.setActionHandler("pause", handlePause);
+    mediaSession.setActionHandler("stop", () => stopPlayback());
+    mediaSession.setActionHandler("seekbackward", () => {
+      const audio = audioRef.current;
+      if (!audio) return;
+      audio.currentTime = Math.max(0, audio.currentTime - 10);
+    });
+    mediaSession.setActionHandler("seekforward", () => {
+      const audio = audioRef.current;
+      if (!audio || !trackDuration.current) return;
+      audio.currentTime = Math.min(trackDuration.current, audio.currentTime + 10);
+    });
+
+    return () => {
+      mediaSession.setActionHandler("play", null);
+      mediaSession.setActionHandler("pause", null);
+      mediaSession.setActionHandler("stop", null);
+      mediaSession.setActionHandler("seekbackward", null);
+      mediaSession.setActionHandler("seekforward", null);
+    };
+  }, [activeTrack, isPlaying]);
 
   useEffect(() => {
     const canvas = visualizerCanvas.current;
