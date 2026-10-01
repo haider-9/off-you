@@ -194,9 +194,9 @@ export default function MusicLibrary() {
 
   async function changeSource(source: "discover" | "musicbrainz") {
     setView(source);
-    setSelected(null);
-    setItem(null);
-    const searchTerm = query.trim() || "ambient jazz";
+    const trimmed = query.trim();
+    // A too-short term should not be sent upstream; fall back to the default browse term.
+    const searchTerm = trimmed.length >= 2 ? trimmed : "ambient jazz";
     if (source === "musicbrainz") await searchMusicBrainz(searchTerm);
     else await searchArchive(searchTerm);
   }
@@ -204,20 +204,27 @@ export default function MusicLibrary() {
   async function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const value = query.trim();
-    if (value.length < 2) { setSearchError("Enter at least two characters to search."); return; }
-    setSelected(null);
-    setItem(null);
+    if (!runSearch(value)) return;
     if (view === "musicbrainz") await searchMusicBrainz(value);
     else await searchArchive(value);
+  }
+
+  // Returns false and shows guidance when the term is too short to search.
+  function runSearch(value: string) {
+    if (value.length < 2) {
+      setSearchError("Enter at least two characters to search.");
+      return false;
+    }
+    setSelected(null);
+    setItem(null);
+    return true;
   }
 
   async function findOnArchive(recording: MusicBrainzRecording) {
     const searchTerm = [recording.title, recording.artist].filter(Boolean).join(" ");
     setQuery(searchTerm);
     setView("discover");
-    setSelected(null);
-    setItem(null);
-    await searchArchive(searchTerm);
+    if (searchTerm.length >= 2) await searchArchive(searchTerm);
   }
 
   async function openItem(result: ArchiveResult) {
@@ -343,9 +350,13 @@ export default function MusicLibrary() {
   }
 
   async function removeTrack(track: OfflineTrack) {
-    await deleteOfflineTrack(track.id);
-    setOfflineTracks((current) => current.filter((saved) => saved.id !== track.id));
-    if (activeTrack?.id === track.id) stopPlayback();
+    try {
+      await deleteOfflineTrack(track.id);
+      setOfflineTracks((current) => current.filter((saved) => saved.id !== track.id));
+      if (activeTrack?.id === track.id) stopPlayback();
+    } catch {
+      setDownloadError("Could not remove this file from local storage. Try again.");
+    }
   }
 
   async function installApp() {
@@ -370,7 +381,7 @@ export default function MusicLibrary() {
         <div className="sidebar-foot"><span className={online ? "connection-dot" : "connection-dot offline"} />{online ? "Connected" : "Offline mode"}</div>
       </aside>
 
-      <main className="main-area">
+      <main className="main-area" id="main-content">
         <header className="topbar"><div className="breadcrumb"><span>STILLWAVE</span><span className="breadcrumb-slash">/</span><span>{view === "discover" ? "ARCHIVE.ORG" : view === "library" ? "YOUR LIBRARY" : "MUSICBRAINZ"}</span></div><div className="top-actions">{!online && <span className="offline-pill"><WifiOff size={14} /> Offline</span>}{installPrompt && <button className="install-button" onClick={() => void installApp()} disabled={installing}><ArrowDownToLine size={15} />{installing ? "Opening…" : "Install app"}</button>}<span className="avatar" aria-label="Local profile">S</span></div></header>
         <div className="content-scroll">
           {(view === "discover" || view === "musicbrainz") && <>
